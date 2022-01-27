@@ -1,105 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  Pressable,
-  Modal,
-  Button,
-  TouchableWithoutFeedback,
-  Platform,
-  TouchableOpacity,
-  ImageBackground,
-  Switch,
-} from 'react-native';
-import {
-  TapGestureHandler,
-  RotationGestureHandler,
-  LongPressGestureHandler,
-} from 'react-native-gesture-handler';
-import { colors, theme } from '@expo/styleguide';
+import { StyleSheet, Text, View, Pressable, Platform, TouchableOpacity } from 'react-native';
+import { colors } from '@expo/styleguide';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'expo-camera';
-import TcpSockets from 'react-native-tcp-socket';
 import * as FileSystem from 'expo-file-system';
-
-const CameraPreview = ({ photo, retakePicture, savePhoto }: any) => {
-  return (
-    <View
-      style={{
-        backgroundColor: 'transparent',
-        flex: 1,
-        width: '100%',
-        height: '100%',
-      }}>
-      <ImageBackground
-        source={{ uri: photo && photo.uri }}
-        style={{
-          flex: 1,
-        }}>
-        <View
-          style={{
-            flex: 1,
-            flexDirection: 'column',
-            padding: 15,
-            justifyContent: 'flex-end',
-          }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-            }}>
-            <TouchableOpacity
-              onPress={retakePicture}
-              style={{
-                width: 130,
-                height: 40,
-
-                alignItems: 'center',
-                borderRadius: 4,
-              }}>
-              <Text
-                style={{
-                  color: '#fff',
-                  fontSize: 20,
-                }}>
-                Re-take
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={savePhoto}
-              style={{
-                width: 130,
-                height: 40,
-
-                alignItems: 'center',
-                borderRadius: 4,
-              }}>
-              <Text
-                style={{
-                  color: '#fff',
-                  fontSize: 20,
-                }}>
-                save photo
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </ImageBackground>
-    </View>
-  );
-};
+import { CameraPreview, ButtonModal /*, SwitchHeader */ } from './App/Components';
 
 export default function App() {
   const [pressableStyle, setPressableStyle] = useState(styles.pressableDefault);
   const [isVisible, setIsVisible] = useState(false);
   const [image, setImage] = useState<string>('');
-  const [hasPermission, setHasPermission] = useState<Boolean>(false);
-  const [type, setType] = useState(Camera.Constants.Type.back);
-  const [showCam, setShowCam] = useState<Boolean>(false);
-  const [isClient, setIsClient] = useState<Boolean>(true);
-  const [isBounce, setIsBounce] = useState<Boolean>(false);
+  const [hasPermission, setHasPermission] = useState<boolean>(false);
+  const type = Camera.Constants.Type.back;
+  const [showCam, setShowCam] = useState<boolean>(false);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [capturedImage, setCapturedImage] = useState<any>(null);
 
@@ -114,26 +28,12 @@ export default function App() {
         } catch (e) {}
       }
     })();
-    // need to establish initial connection with websocket
     (async () => {
       try {
         const { status } = await Camera.requestCameraPermissionsAsync();
         setHasPermission(status === 'granted');
       } catch (e) {}
     })();
-  }, []);
-
-  let socket: TcpSockets.Socket;
-
-  useEffect(() => {
-    // initate 3 tcp sockets in true browser fashion
-    switch (isClient) {
-      case false:
-        socket = TcpSockets.createConnection({ port: 8080, host: '10.29.100.151' }, () => {});
-        return;
-      default:
-        return;
-    }
   }, []);
 
   if (hasPermission === null) {
@@ -143,6 +43,16 @@ export default function App() {
     return <Text>No access to camera</Text>;
   }
 
+  const sendImageViaPOST = async () => {
+    const url = ''; /* fill in during lec */
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain', // because our image is converted to a (base64) string
+      },
+      body: image,
+    });
+  };
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
@@ -152,31 +62,28 @@ export default function App() {
     });
 
     if (!result.cancelled) {
-      // alert(JSON.stringify(result));
       setImage(result.uri);
     }
   };
 
   const getFile = async () => {
-    const fileObj = await DocumentPicker.getDocumentAsync();
-    if (fileObj.type === 'success') {
-      alert(JSON.stringify(fileObj));
-    }
-    let imageFromDisk = await FileSystem.readAsStringAsync(fileObj.uri);
-    // tcp connection limited to 1024 bytes
-    while (imageFromDisk) {
-      if (imageFromDisk.length > 1024) {
-        socket.write(imageFromDisk.slice(0, 1023));
-        imageFromDisk = imageFromDisk.slice(1023);
-      } else {
-        socket.write(imageFromDisk.slice(0, imageFromDisk.length));
+    try {
+      const fileObj: DocumentPicker.DocumentResult = await DocumentPicker.getDocumentAsync();
+      if (fileObj.type === 'success') {
+        alert(JSON.stringify(fileObj));
       }
+      const { uri } = fileObj as unknown as ImagePicker.ImageInfo;
+      let imageFromDisk = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      setImage(imageFromDisk);
+    } catch (err) {
+      alert(err);
     }
   };
   const __takePicture = async () => {
     if (!camera) return;
     const photo = await camera.takePictureAsync();
-    alert(JSON.stringify(photo));
     setPreviewVisible(true);
     setCapturedImage(photo);
   };
@@ -187,47 +94,27 @@ export default function App() {
   };
 
   const __savePhoto = async () => {
+    // get image
     // have to write image to disk then send to server
-    // const imageFromDisk = RNFS.readFile(capturedImage.uri, 'base64'); // returns a promise
+    // const imageFromDisk = RNFS.readFile(capturedImage.uri, 'base64'); // returns a promise, unsupported via Expo
     // const imageFromDisk = await FileSystem.readAsStringAsync(capturedImage.uri);
-    // alert(imageFromDisk);
+  };
+
+  const __hideCam = async () => {
+    setShowCam(false);
   };
 
   let camera: Camera;
   const Cam = () => (
     <Camera
       type={type}
-      style={{ flex: 1, width: '100%' }}
+      style={styles.cam}
       ref={(r) => {
         if (r) camera = r;
       }}>
-      <View
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          flexDirection: 'row',
-          flex: 1,
-          width: '100%',
-          padding: 20,
-          marginBottom: 20,
-          justifyContent: 'space-between',
-        }}>
-        <View
-          style={{
-            alignSelf: 'center',
-            flex: 1,
-            alignItems: 'center',
-          }}>
-          <TouchableOpacity
-            onPress={__takePicture}
-            style={{
-              width: 70,
-              height: 70,
-              bottom: 0,
-              borderRadius: 50,
-              backgroundColor: '#fff',
-            }}
-          />
+      <View style={styles.camContainer}>
+        <View style={styles.camButtonContainer}>
+          <TouchableOpacity onPress={__takePicture} style={styles.camButton} />
         </View>
       </View>
     </Camera>
@@ -241,73 +128,21 @@ export default function App() {
             photo={capturedImage}
             savePhoto={__savePhoto}
             retakePicture={__retakePicture}
+            hideCam={__hideCam}
           />
         ) : (
           <Cam />
         )
       ) : (
         <>
-          <Modal
-            transparent={true}
-            visible={isVisible}
-            presentationStyle="overFullScreen"
-            animationType="slide">
-            <TouchableWithoutFeedback onPress={() => setIsVisible(!isVisible)}>
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                <TouchableWithoutFeedback
-                  style={{ width: '100%', height: '100%' }}
-                  onPress={() => {}}>
-                  <View style={styles.modalView}>
-                    <View style={styles.button}>
-                      <Button color={colors.primary[400]} title="File" onPress={getFile} />
-                    </View>
-                    <View style={styles.button}>
-                      <Button color={colors.primary[400]} title="Photos" onPress={pickImage} />
-                    </View>
-                    <View style={styles.button}>
-                      <Button
-                        color={colors.primary[400]}
-                        title="Camera"
-                        onPress={() => setShowCam(true)}
-                      />
-                    </View>
-                  </View>
-                </TouchableWithoutFeedback>
-              </View>
-            </TouchableWithoutFeedback>
-          </Modal>
-          <View
-            style={{
-              flexDirection: 'row',
-              width: '100%',
-              justifyContent: 'space-around',
-              marginBottom: 16,
-            }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 8, marginRight: 16 }}>
-                {isClient ? 'Client' : 'Server'}
-              </Text>
-              <Switch
-                style={{ height: 40, width: 40 }}
-                trackColor={{ false: '#767577', true: colors.primary[200] }}
-                // ios_backgroundColor="#3e3e3e"
-                onValueChange={(value) => setIsClient(value)}
-                value={isClient}
-              />
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 8, marginRight: 16 }}>
-                Bounce?
-              </Text>
-              <Switch
-                style={{ height: 40, width: 40 }}
-                trackColor={{ false: '#767577', true: '#81b0ff' }}
-                // ios_backgroundColor="#3e3e3e"
-                onValueChange={(value) => setIsBounce(value)}
-                value={isBounce}
-              />
-            </View>
-          </View>
+          <ButtonModal
+            isVisible={isVisible}
+            setIsVisible={() => setIsVisible(!isVisible)}
+            getFile={getFile}
+            pickImage={pickImage}
+            setShowCam={() => setShowCam(!showCam)}
+          />
+          {/* <SwitchHeader /> */}
           <View style={styles.upload}>
             <Pressable
               style={pressableStyle}
@@ -326,17 +161,6 @@ export default function App() {
     </View>
   );
 }
-// const LongPressButton = () => (
-//   <LongPressGestureHandler
-//     onHandlerStateChange={({ nativeEvent }) => {
-//       if (nativeEvent.state === State.ACTIVE) {
-//         Alert.alert("I'm being pressed for so long");
-//       }
-//     }}
-//     minDurationMs={800}>
-//     <View style={styles.box} />
-//   </LongPressGestureHandler>
-// );
 
 const styles = StyleSheet.create({
   container: {
@@ -381,18 +205,30 @@ const styles = StyleSheet.create({
   text: {
     fontWeight: '500',
   },
-  modalView: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '70%',
-    height: '20%',
-    backgroundColor: colors.primary[100],
-    borderRadius: 10,
+  camButton: {
+    width: 70,
+    height: 70,
+    bottom: 0,
+    borderRadius: 50,
+    backgroundColor: '#fff',
   },
-  button: {
-    width: '50%',
-    margin: 5,
-    backgroundColor: colors.primary[200],
-    borderRadius: 5,
+  camButtonContainer: {
+    alignSelf: 'center',
+    flex: 1,
+    alignItems: 'center',
+  },
+  camContainer: {
+    position: 'absolute',
+    bottom: 0,
+    flexDirection: 'row',
+    flex: 1,
+    width: '100%',
+    padding: 20,
+    marginBottom: 20,
+    justifyContent: 'space-between',
+  },
+  cam: {
+    flex: 1,
+    width: '100%',
   },
 });

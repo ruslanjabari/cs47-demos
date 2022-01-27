@@ -9,5 +9,10 @@ npm-debug.*
 *.orig.*
 web-build/
 
+FileUpload.app/
+
 # macOS
 .DS_Store
+
+# vim swap
+*.swp
